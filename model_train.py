@@ -6,7 +6,9 @@ import matplotlib
 import matplotlib.pyplot as plt
 import torch.nn as nn
 from torch import optim
+from torch.autograd import Variable
 
+from dice_loss import DiceLoss
 from unet.unet_model import UNet
 import torch
 import torch.nn as nn
@@ -21,54 +23,6 @@ from utils.template_match_target import *
 from evaluate import *
 
 dir_checkpoint = 'checkpoints/'
-
-def custom_image_generator(data, target, batch_size=32):
-    """Custom image generator that manipulates image/target pairs to prevent
-    overfitting in the Convolutional Neural Network.
-
-    Parameters
-    ----------
-    data : array
-        Input images.
-    target : array
-        Target images.
-    batch_size : int, optional
-        Batch size for image manipulation.
-
-    Yields
-    ------
-    Manipulated images and targets.
-
-    """
-    num = len(data)
-    L, W = data[0].shape[0], data[0].shape[1]
-    while True:
-        for i in range(0, num, batch_size):
-            d, t = data[i:i + batch_size].copy(), target[i:i + batch_size].copy()
-
-            # Random color inversion
-            # for j in np.where(np.random.randint(0, 2, batch_size) == 1)[0]:
-            #     d[j][d[j] > 0.] = 1. - d[j][d[j] > 0.]
-
-            # Horizontal/vertical flips
-            for j in np.where(np.random.randint(0, 2, batch_size) == 1)[0]:
-                d[j], t[j] = np.fliplr(d[j]), np.fliplr(t[j])  # left/right
-            for j in np.where(np.random.randint(0, 2, batch_size) == 1)[0]:
-                d[j], t[j] = np.flipud(d[j]), np.flipud(t[j])  # up/down
-
-            # Random up/down & left/right pixel shifts, 90 degree rotations
-            npix = 15
-            h = np.random.randint(-npix, npix + 1, batch_size)  # Horizontal shift
-            v = np.random.randint(-npix, npix + 1, batch_size)  # Vertical shift
-            r = np.random.randint(0, 4, batch_size)  # 90 degree rotations
-            for j in range(batch_size):
-                d[j] = np.pad(d[j], ((npix, npix), (npix, npix), (0, 0)),
-                              mode='constant')[npix + h[j]:L + h[j] + npix,
-                       npix + v[j]:W + v[j] + npix, :]
-                t[j] = np.pad(t[j], (npix,), mode='constant')[npix + h[j]:L + h[j] + npix,
-                       npix + v[j]:W + v[j] + npix]
-                d[j], t[j] = np.rot90(d[j], r[j]), np.rot90(t[j], r[j])
-            yield (d, t)
 
 
 def get_metrics(data, craters, dim, model, beta=1, device='cuda:0', bs=1):
@@ -247,7 +201,7 @@ def train_and_test_model(Data, Craters, MP, i_MP,device='cuda:0'):
                               shuffle=True,
                               num_workers=0)
 
-    writer = SummaryWriter('./log/225')
+    writer = SummaryWriter('./log/ann')
     epoch_loss = 0
     global_step = 0
     n_classes = 1
@@ -256,6 +210,7 @@ def train_and_test_model(Data, Craters, MP, i_MP,device='cuda:0'):
     optimizer = optim.Adam(model.parameters(), lr=learn_rate)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min' if n_classes > 1 else 'max', patience=2)
     criterion = nn.BCEWithLogitsLoss()
+    # criterion = DiceLoss()
     device = 'cuda:0'
     # Main loop
     n_samples = MP['n_train']
@@ -263,8 +218,9 @@ def train_and_test_model(Data, Craters, MP, i_MP,device='cuda:0'):
     for nb in range(nb_epoch):
         model.train()
         num_train = 0
-        with tqdm(total=n_samples*2, desc=f'Epoch {nb + 1}/{nb_epoch}', unit='img') as pbar:
-            for steps_per_epoch in range(2):  # 100效果尚可
+        circu = 2
+        with tqdm(total=n_samples*circu, desc=f'Epoch {nb + 1}/{nb_epoch}', unit='img') as pbar:
+            for steps_per_epoch in range(circu):  # 100效果尚可
                 for batch in train_loader:
                     imgs = batch[0]
                     imgs = torch.as_tensor(imgs)
@@ -276,21 +232,22 @@ def train_and_test_model(Data, Craters, MP, i_MP,device='cuda:0'):
                     true_masks = torch.as_tensor(true_masks)
                     true_masks = torch.reshape(true_masks,(bs,1,dim,dim))
                     true_masks = true_masks.to(device)
-
-                    optimizer.zero_grad()
-
                     masks_pred = model(imgs)
                     num_train += 1
+                    # 改成dice_loss
                     loss = criterion(masks_pred, true_masks)
+                    # pred = torch.sigmoid(masks_pred)
+                    # pred = (pred > 0.5).float()
 
-                    epoch_loss += loss.item()
+                    # epoch_loss += loss.item()
                     writer.add_scalar('Loss/train', loss.item(), global_step)
                     pbar.set_postfix(**{'loss (batch)': loss.item()})
 
-
+                    optimizer.zero_grad()
                     loss.backward()
-                    nn.utils.clip_grad_value_(model.parameters(), 0.1)
                     optimizer.step()
+                    nn.utils.clip_grad_value_(model.parameters(), 0.1)
+
 
                     pbar.update(imgs.shape[0])
                     global_step += 1

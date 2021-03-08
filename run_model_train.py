@@ -20,8 +20,8 @@ if __name__ == '__main__':
     device = 'cuda:0'
     MP = {}
     # Directory of train/dev/test image and crater hdf5 files.
-    # MP['dir'] = 'E:/dataset/'
-    MP['dir'] = '/home/zkk/SUNET/dataset'
+    MP['dir'] = 'E:/dataset/'
+    # MP['dir'] = '/home/zkk/SUNET/dataset'
     # Image width/height, assuming square images.
     MP['dim'] = 256
     dir = MP['dir']
@@ -104,7 +104,7 @@ if __name__ == '__main__':
 
 
     "train unet model"
-    train_ann_model = True
+    train_ann_model = False
     if train_ann_model == True:
         print("……train ann unet model……")
         get_ann_models(MP)
@@ -115,9 +115,9 @@ if __name__ == '__main__':
     net = UNet_nobn(n_channels=1, n_classes=1, bilinear=True)
     # net = UNet(n_channels=1, n_classes=1, bilinear=True)
     net = net.to(device)
-    model_path = '/home/zkk/SUNET/checkpoints'
-    # model_path = 'C:\\Users\\FMSII\\Desktop\\SUnet_DeepMoon\\checkpoints'
-    file_name = 'unet_deepmoon_nobn.pth'
+    # model_path = '/home/zkk/SUNET/checkpoints'
+    model_path = 'C:\\Users\\FMSII\\Desktop\\SUnet_DeepMoon\\checkpoints'
+    file_name = 'unet_deepmoon.pth'
     state, net = load_model(net,model_path,file_name)
     net = net.to(device)
 
